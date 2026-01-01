@@ -1,0 +1,4 @@
+.env
+logs
+public/assets_cache
+node_modules
