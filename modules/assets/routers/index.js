@@ -3,6 +3,9 @@ import * as controller from '../controller.js';
 
 const router = express.Router();
 
+router.get('/css', controller.redirectCSS);
+router.get('/js', controller.redirectJS);
+
 router.get('/links', controller.getLinks);
 
 router.get('/script.js', controller.getJs);

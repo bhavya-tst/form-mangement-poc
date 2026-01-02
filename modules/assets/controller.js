@@ -3,7 +3,29 @@ import logger from '../../utils/logger.js';
 import { ASSET_URLS } from './constant.js';
 
 /**
- * Serves the JS asset.
+ * Redirects CSS asset to CDN
+ */
+export const redirectCSS = (req, res, next) => {
+  try {
+    return res.redirect(302, ASSET_URLS.CSS);
+  } catch (error) {
+    next(error);
+  }
+};
+
+/**
+ * Redirects JS asset to CDN
+ */
+export const redirectJS = (req, res, next) => {
+  try {
+    return res.redirect(302, ASSET_URLS.JS);
+  } catch (error) {
+    next(error);
+  }
+};
+
+/**
+ * Serves the links json.
  */
 export const getLinks = async (req, res, next) => {
   try {
