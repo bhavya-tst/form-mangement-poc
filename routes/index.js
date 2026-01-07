@@ -1,9 +1,11 @@
 
+
 import express from 'express';
 import formsRoutes from './forms.js';
 import websitesRoutes from './websites.js';
 import systemRoutes from './system.js';
 import authRoutes from './auth.js';
+import assetsRoutes from './assets.js';
 
 const router = express.Router();
 
@@ -12,6 +14,7 @@ router.get('/health', (req, res) => {
 });
 
 router.use('/auth', authRoutes); // Public
+router.use('/assets', assetsRoutes); // Public - serves static assets
 router.use('/forms', formsRoutes); // Protected (middleware inside)
 router.use('/websites', websitesRoutes); // Protected (middleware inside)
 router.use('/system', systemRoutes); // Protected (middleware inside)

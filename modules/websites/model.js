@@ -11,7 +11,6 @@ const Website = sequelize.define("Website", {
   domain: {
     type: DataTypes.STRING,
     allowNull: false,
-    unique: true,
     set(value) {
       // Normalize domain (lowercase, trim)
       this.setDataValue('domain', value.toLowerCase().trim());
@@ -25,6 +24,16 @@ const Website = sequelize.define("Website", {
       key: 'id'
     }
   }
+}, {
+  timestamps: true,
+  paranoid: true,
+  indexes: [
+    {
+      unique: true,
+      fields: ['domain', 'deletedAt'],
+      name: 'unique_domain_with_deleted_at'
+    }
+  ]
 });
 
 // Associations

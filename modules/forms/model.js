@@ -19,7 +19,21 @@ const Form = sequelize.define("Form", {
     type: DataTypes.BOOLEAN,
     defaultValue: false,
   },
+  sourceType: {
+    type: DataTypes.ENUM('cdn', 'file'),
+    allowNull: false,
+  },
+  cdnUrl: {
+    type: DataTypes.STRING,
+    allowNull: true,
+  },
+  fileContent: {
+    type: DataTypes.TEXT,
+    allowNull: true,
+  },
 }, {
+  timestamps: true,
+  paranoid: true,
   // Partial unique index for isDefault=true
   indexes: [
     {

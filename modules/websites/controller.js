@@ -12,7 +12,14 @@ export async function getWebsites(req, res) {
     const q = req.query;
     // Standard sqquery. Note: "search" defaults to empty, "searchFrom" needs columns.
     // User requested search(domain), filter(formId), sort.
-    const queryOptions = usersqquery(q, {}, ["domain"]);
+    
+    // Handle formId filter manually since usersqquery doesn't process custom filters
+    const baseFilter = {};
+    if (q.formId) {
+      baseFilter.formId = parseInt(q.formId);
+    }
+    
+    const queryOptions = usersqquery(q, baseFilter, ["domain"]);
     
     // Include Form version info
     queryOptions.include = [{ model: Form, attributes: ["id", "version", "versionNumber"] }];
@@ -34,6 +41,31 @@ export async function createWebsite(req, res) {
   try {
     const { domain, formId } = req.body;
     
+    // Validate input
+    if (!domain || !formId) {
+      await t.rollback();
+      return res.status(400).json({ 
+        status: 400, 
+        message: "Domain and formId are required" 
+      });
+    }
+    
+    // Normalize domain for checking
+    const normalizedDomain = domain.toLowerCase().trim();
+    
+    // Check if domain already exists (only active records)
+    const existingWebsite = await WebsitesService.findOne({ 
+      where: { domain: normalizedDomain },
+      transaction: t 
+    });
+    if (existingWebsite) {
+      await t.rollback();
+      return res.status(400).json({ 
+        status: 400, 
+        message: "Domain already exists" 
+      });
+    }
+    
     // Check form exists
     const form = await FormsService.findOne({ where: { id: formId }, transaction: t });
     if (!form) {
@@ -45,8 +77,8 @@ export async function createWebsite(req, res) {
     
     await t.commit();
     
-    // Rebuild Cache (Asynchronously)
-    CacheManager.rebuild();
+    // Add domain mapping to cache
+    CacheManager.addWebsite(newWebsite.domain, form.version);
     
     res.status(201).json({
       status: 201,
@@ -55,6 +87,15 @@ export async function createWebsite(req, res) {
     });
   } catch (error) {
     if (t) await t.rollback(); // Safe rollback
+    
+    // Handle Sequelize validation errors
+    if (error.name === 'SequelizeValidationError' || error.name === 'SequelizeUniqueConstraintError') {
+      return res.status(400).json({ 
+        status: 400, 
+        message: error.errors ? error.errors.map(e => e.message).join(', ') : error.message 
+      });
+    }
+    
     res.status(500).json({ status: 500, message: error.message });
   }
 }
@@ -75,28 +116,66 @@ export async function bulkCreateWebsites(req, res) {
         return res.status(404).json({ status: 404, message: "Form version not found" });
     }
 
-    // Normalize and prepare data
-    const websitesData = domains.map(d => ({
-        domain: d.toLowerCase().trim(),
+    // Normalize domains
+    const normalizedDomains = domains.map(d => d.toLowerCase().trim());
+    
+    // Check for existing active domains
+    const existingWebsites = await WebsitesService.findAll({
+      where: { domain: { [Op.in]: normalizedDomains } },
+      transaction: t
+    });
+    
+    const existingDomainSet = new Set(existingWebsites.map(w => w.domain));
+    
+    // Filter out existing domains - only create new ones
+    const newDomains = normalizedDomains.filter(domain => !existingDomainSet.has(domain));
+    
+    if (newDomains.length === 0) {
+      await t.rollback();
+      return res.status(400).json({ 
+        status: 400, 
+        message: "All domains already exist. No new websites created.",
+        data: {
+          total: normalizedDomains.length,
+          created: 0,
+          skipped: normalizedDomains.length,
+          skippedDomains: Array.from(existingDomainSet)
+        }
+      });
+    }
+
+    // Prepare data for new domains only
+    const websitesData = newDomains.map(domain => ({
+        domain,
         formId
     }));
 
     const result = await WebsitesService.bulkCreate(websitesData, { 
         transaction: t,
-        ignoreDuplicates: false, // User constraint: "domain (string, unique)". We should probably fail or handle duplicates.
-        // If ignoreDuplicates is true, it skips. If false, it throws.
-        // Let's assume we want to fail if any exist, or use updateOnDuplicate if needed.
-        // Requirement implies "Logic: Validate... BulkCreate".
         validate: true
     });
 
     await t.commit();
-    CacheManager.rebuild();
+    
+    // Add all domain mappings to cache
+    for (const website of result) {
+      CacheManager.addWebsite(website.domain, form.version);
+    }
+
+    const responseMessage = existingDomainSet.size > 0
+      ? `${result.length} websites created successfully. ${existingDomainSet.size} domains were skipped (already exist).`
+      : `${result.length} websites created successfully`;
 
     res.status(201).json({
       status: 201,
-      message: `${result.length} websites created successfully`,
-      data: result
+      message: responseMessage,
+      data: {
+        total: normalizedDomains.length,
+        created: result.length,
+        skipped: existingDomainSet.size,
+        skippedDomains: existingDomainSet.size > 0 ? Array.from(existingDomainSet) : [],
+        createdWebsites: result
+      }
     });
   } catch (error) {
     if (t) await t.rollback();
@@ -125,8 +204,20 @@ export async function updateWebsite(req, res) {
     }
 
     await WebsitesService.update(req.body, { where: { id }, transaction: t });
+    
+    // Fetch updated website with form info
+    const updatedWebsite = await WebsitesService.findOne({
+      where: { id },
+      include: [{ model: Form, attributes: ['version'] }],
+      transaction: t
+    });
+    
     await t.commit();
-    CacheManager.rebuild();
+    
+    // Update domain mapping in cache
+    if (updatedWebsite && updatedWebsite.Form) {
+      CacheManager.updateWebsite(updatedWebsite.domain, updatedWebsite.Form.version);
+    }
 
     res.status(200).json({ status: 200, message: "Website updated successfully" });
   } catch (error) {
@@ -139,13 +230,25 @@ export async function deleteWebsite(req, res) {
   const t = await sequelize.transaction();
   try {
     const { id } = req.params;
+    
+    // Fetch website first to get domain for cache removal
+    const website = await WebsitesService.findOne({ where: { id }, transaction: t });
+    if (!website) {
+        await t.rollback();
+        return res.status(404).json({ status: 404, message: "Website not found" });
+    }
+    
     const result = await WebsitesService.remove({ where: { id }, transaction: t });
     if (!result) {
         await t.rollback();
         return res.status(404).json({ status: 404, message: "Website not found" });
     }
+    
     await t.commit();
-    CacheManager.rebuild();
+    
+    // Remove domain mapping from cache
+    CacheManager.removeWebsite(website.domain);
+    
     res.status(200).json({ status: 200, message: "Website deleted successfully" });
   } catch (error) {
     if (t) await t.rollback();
@@ -179,9 +282,19 @@ export async function migrateWebsites(req, res) {
                 transaction: t 
             }
         );
+        
+        // Fetch updated websites to get their domains
+        const updatedWebsites = await WebsitesService.findAll({
+          where: { id: { [Op.in]: websiteIds } },
+          transaction: t
+        });
 
         await t.commit();
-        CacheManager.rebuild();
+        
+        // Update cache for all affected domains
+        for (const website of updatedWebsites) {
+          CacheManager.updateWebsite(website.domain, targetForm.version);
+        }
 
         res.status(200).json({
             status: 200,
