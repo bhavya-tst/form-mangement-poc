@@ -22,14 +22,14 @@ export const createFormSchema = Joi.object({
     }),
   
   fileContent: Joi.string()
-    .min(1)
+    .max(10485760) // 10MB max for safety
     .when('sourceType', {
       is: 'file',
       then: Joi.required(),
       otherwise: Joi.forbidden()
     })
     .messages({
-      'string.min': 'File content cannot be empty',
+      'string.max': 'File content is too large (max 10MB)',
       'any.required': 'File content is required when source type is "file"'
     })
 }).options({ 

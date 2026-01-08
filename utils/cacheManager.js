@@ -108,15 +108,15 @@ class CacheManager {
       return null;
     }
     
-    // Normalize domain
-    const normalizedDomain = domain.toLowerCase().trim();
+    // Normalize domain (safe with optional chaining for null domains)
+    const normalizedDomain = domain?.toLowerCase()?.trim();
     
     // Try to find domain mapping
     let version = this.domainMap.get(normalizedDomain);
     
     if (!version) {
       // Fallback to default form
-      logger.info(`[CacheManager] Domain ${normalizedDomain} not found, using default form`);
+      logger.info(`[CacheManager] Domain ${normalizedDomain || 'not provided'} not found, using default form`);
       version = this.defaultFormVersion;
     }
     

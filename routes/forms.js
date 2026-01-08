@@ -10,6 +10,7 @@ const router = express.Router();
 router.use(adminAuth);
 
 router.get("/", FormsController.getForms);
+router.get("/dropdown", FormsController.getFormsForDropdown);
 router.post("/", joiValidator(createFormSchema), FormsController.createForm);
 router.patch("/:id/set-default", FormsController.setDefaultForm);
 router.delete("/:id", FormsController.deleteForm);

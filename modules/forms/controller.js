@@ -25,20 +25,43 @@ export async function getForms(req, res) {
   }
 }
 
+export async function getFormsForDropdown(req, res) {
+  try {
+    // Fetch only essential fields for dropdown (exclude heavy fileContent)
+    const data = await FormsService.findAll({
+      attributes: ['id', 'version', 'isDefault', 'versionNumber'],
+      order: [['versionNumber', 'DESC']],
+    });
+    
+    res.status(200).json({
+      status: 200,
+      message: "Forms fetched successfully",
+      data,
+    });
+  } catch (error) {
+    res.status(500).json({ status: 500, message: error.message });
+  }
+}
+
 export async function createForm(req, res) {
   const t = await sequelize.transaction();
   try {
     const { sourceType, cdnUrl, fileContent } = req.body;
     
     // Get the maximum version number to generate next version
+    // Use paranoid: false to include soft-deleted records in the count
     const maxVersionForm = await FormsService.findOne({
       order: [['versionNumber', 'DESC']],
+      paranoid: false,  // Include soft-deleted forms
       transaction: t
     });
     
     const nextVersionNumber = maxVersionForm ? maxVersionForm.versionNumber + 1 : 1;
     const version = `v${nextVersionNumber}`;
-    const isDefault = nextVersionNumber === 1; // First form is default
+    
+    // Check if this is the first active (non-deleted) form
+    const activeFormsCount = await FormsService.count({ transaction: t });
+    const isDefault = activeFormsCount === 0; // First active form is default
     
     // Prepare form data
     const formData = {
@@ -123,6 +146,22 @@ export async function createForm(req, res) {
   } catch (error) {
     await t.rollback();
     logger.error(`[Forms] Error creating form: ${error.message}`);
+    logger.error(`[Forms] Error name: ${error.name}`);
+    logger.error(`[Forms] Error stack: ${error.stack}`);
+    
+    // Handle unique constraint violation (version number conflict)
+    if (error.name === 'SequelizeUniqueConstraintError') {
+      return res.status(409).json({ 
+        status: 409, 
+        message: 'A form with this version number already exists. Please try again.' 
+      });
+    }
+    
+    // Log Sequelize validation errors in detail
+    if (error.name === 'SequelizeValidationError' && error.errors) {
+      logger.error(`[Forms] Validation errors:`, JSON.stringify(error.errors, null, 2));
+    }
+    
     res.status(500).json({ status: 500, message: error.message });
   }
 }
