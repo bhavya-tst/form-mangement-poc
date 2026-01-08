@@ -259,11 +259,39 @@ export async function deleteWebsite(req, res) {
 export async function migrateWebsites(req, res) {
     const t = await sequelize.transaction();
     try {
-        const { targetFormId, websiteIds } = req.body;
+        const { targetFormId, websiteIds, selectAll, sourceFormId, search } = req.body;
         
-        if (!targetFormId || !websiteIds || !Array.isArray(websiteIds) || websiteIds.length === 0) {
+        // Determine which websites to migrate
+        let idsToMigrate;
+        
+        if (selectAll) {
+            // Fetch all IDs matching the filters (same logic as getWebsites)
+            const where = {};
+            if (sourceFormId) {
+                where.formId = parseInt(sourceFormId);
+            }
+            if (search) {
+                where.domain = { [Op.like]: `%${search}%` };
+            }
+            
+            const websites = await WebsitesService.findAll({
+                where,
+                attributes: ['id'],
+                transaction: t
+            });
+            
+            idsToMigrate = websites.map(w => w.id);
+        } else {
+            // Use provided IDs
+            idsToMigrate = websiteIds;
+        }
+        
+        if (!idsToMigrate || idsToMigrate.length === 0) {
             await t.rollback();
-            return res.status(400).json({ status: 400, message: "Invalid migration parameters" });
+            return res.status(400).json({ 
+                status: 400, 
+                message: "No websites to migrate" 
+            });
         }
 
         const targetForm = await FormsService.findOne({ where: { id: targetFormId }, transaction: t });
@@ -277,7 +305,7 @@ export async function migrateWebsites(req, res) {
             { formId: targetFormId },
             { 
                 where: { 
-                    id: { [Op.in]: websiteIds } 
+                    id: { [Op.in]: idsToMigrate } 
                 }, 
                 transaction: t 
             }
@@ -285,7 +313,7 @@ export async function migrateWebsites(req, res) {
         
         // Fetch updated websites to get their domains
         const updatedWebsites = await WebsitesService.findAll({
-          where: { id: { [Op.in]: websiteIds } },
+          where: { id: { [Op.in]: idsToMigrate } },
           transaction: t
         });
 
@@ -298,7 +326,7 @@ export async function migrateWebsites(req, res) {
 
         res.status(200).json({
             status: 200,
-            message: "Migration successful",
+            message: `Migration successful. ${updatedCount} website(s) migrated.`,
             data: { updatedCount }
         });
     } catch (error) {
@@ -306,3 +334,4 @@ export async function migrateWebsites(req, res) {
         res.status(500).json({ status: 500, message: error.message });
     }
 }
+

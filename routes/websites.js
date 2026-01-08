@@ -2,6 +2,8 @@
 import express from "express";
 import * as WebsitesController from "../modules/websites/controller.js";
 import adminAuth from "../middlewares/adminAuth.js";
+import { joiValidator } from "../middlewares/joiValidator.js";
+import { migrateWebsitesSchema } from "../modules/websites/validation.js";
 
 const router = express.Router();
 
@@ -14,6 +16,7 @@ router.delete("/:id", WebsitesController.deleteWebsite);
 
 // Bulk & Migration
 router.post("/bulk-create", WebsitesController.bulkCreateWebsites);
-router.post("/migrate", WebsitesController.migrateWebsites);
+router.post("/migrate", joiValidator(migrateWebsitesSchema), WebsitesController.migrateWebsites);
 
 export default router;
+

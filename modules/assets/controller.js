@@ -81,6 +81,31 @@ export const getCss = async (req, res, next) => {
 };
 
 /**
+ * Extracts domain and path from the Referer header.
+ * @param {string} referer - The referer URL from request header
+ * @returns {Object} Object containing domain and path
+ * @example
+ * parseReferer('https://example.com/products/item1')
+ * // Returns: { domain: 'example.com', path: '/products/item1' }
+ */
+const parseReferer = (referer) => {
+  if (!referer) {
+    return { domain: null, path: null };
+  }
+
+  try {
+    const url = new URL(referer);
+    return {
+      domain: url.hostname.toLowerCase().trim(),
+      path: url.pathname
+    };
+  } catch (error) {
+    logger.warn(`[Assets] Invalid referer URL: ${referer}`);
+    return { domain: null, path: null };
+  }
+};
+
+/**
  * Serves quote-form.iife.js based on domain mapping.
  * Uses in-memory cache for zero database overhead.
  * All content is pre-fetched and stored, so no external calls needed.
@@ -88,13 +113,30 @@ export const getCss = async (req, res, next) => {
  */
 export const getQuoteForm = async (req, res, next) => {
   try {
-    // Extract domain from request (can be from header, query param, or hostname)
-    const domain = (req.query.domain || req.get('host') || req.hostname).toLowerCase().trim();
-    
-    logger.info(`[Assets] Serving quote-form.iife.js for domain: ${domain}`);
+    // Extract domain and path from the Referer header
+    // This identifies which website is embedding our form
+    const referer = req.get('referer');
+    const { domain, path } = parseReferer(referer);
 
-    // Get form content from cache (includes automatic fallback to default)
-    // Content is already pre-fetched and stored as a string
+    const debugData = {
+      referer,
+      extractedDomain: domain,
+      extractedPath: path,
+      requestHost: req.get('host'),
+      requestHostname: req.hostname,
+      requestPath: req.path,
+      method: req.method
+    };
+
+    logger.info('[Assets] Quote form request details', debugData);
+
+    // If no referer or invalid referer, we cannot determine which form to serve
+    if (!domain) {
+      logger.warn('[Assets] No valid referer header - serving default form');
+    }
+
+    // Get form content from cache using the extracted domain
+    // If domain is null or not found, this will automatically fall back to default
     const content = CacheManager.getFormContent(domain);
 
     if (!content) {
@@ -109,7 +151,7 @@ export const getQuoteForm = async (req, res, next) => {
     res.set('Content-Type', 'application/javascript');
     res.send(content);
     
-    logger.info(`[Assets] Successfully served ${content.length} bytes`);
+    logger.info(`[Assets] Successfully served ${content.length} bytes for domain: ${domain || 'default'}`);
   } catch (error) {
     logger.error(`[Assets] Error serving quote-form.iife.js: ${error.message}`, { stack: error.stack });
     next(error);
