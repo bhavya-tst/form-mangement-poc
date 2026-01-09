@@ -119,7 +119,7 @@ export const getQuoteForm = async (req, res, next) => {
     const origin = req.get('origin') || null;
     console.log("origin",origin);
     const { domain, path } = parseReferer(referer);
-
+    console.log("domain",domain)
     // If no referer or invalid referer, we cannot determine which form to serve
     if (!domain) {
       logger.warn('[Assets] No valid referer header - serving default form');
