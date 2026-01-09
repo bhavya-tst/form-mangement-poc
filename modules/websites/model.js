@@ -26,14 +26,7 @@ const Website = sequelize.define("Website", {
   }
 }, {
   timestamps: true,
-  paranoid: true,
-  indexes: [
-    {
-      unique: true,
-      fields: ['domain', 'deletedAt'],
-      name: 'unique_domain_with_deleted_at'
-    }
-  ]
+  paranoid: true
 });
 
 // Associations
