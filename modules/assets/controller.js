@@ -6,7 +6,6 @@ import logger from '../../utils/logger.js';
 // import Form from '../forms/model.js';
 // import axios from 'axios';
 import CacheManager from '../../utils/cacheManager.js';
-import { Console } from 'winston/lib/winston/transports/index.js';
 
 /**
  * Redirects CSS asset to CDN
